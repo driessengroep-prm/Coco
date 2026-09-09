@@ -12,7 +12,7 @@ DOEL="buddy-admin@40.115.59.118:/data/caddy/apps/coco/"
 
 rsync -az --delete \
   --include='index.html' --include='manifest.json' --include='service-worker.js' \
-  --include='icon.svg' --include='*.png' --exclude='*' \
+  --include='favicon.ico' --include='*.png' --exclude='*' \
   --exclude='index.html' \
   ./ "$DOEL"
 rsync -az index.html "$DOEL"
