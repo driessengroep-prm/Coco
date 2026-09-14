@@ -1,4 +1,4 @@
-const CACHE = 'coco-v45';
+const CACHE = 'coco-v46';
 const SHELL = ['/', '/index.html', '/favicon.ico', '/favicon-32.png', '/apple-touch-icon.png', '/manifest.json'];
 
 self.addEventListener('install', e => {

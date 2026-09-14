@@ -48,6 +48,20 @@ de sleutel die je zelf invult, opslag via Buddy Data (https://buddy.driessengroe
 
 `server.js` en `public/` zijn een oudere opzet die niet meer gebruikt wordt.
 
+### Columns overzetten uit de oude Supabase-opslag
+
+Vóór Buddy Data stonden de columns in Supabase, in de tabel `coco_columns`. Open
+<https://coco.driessengroep.nl/?import=supabase> om ze over te zetten. Vul het adres van het
+oude project en de publieke sleutel in (Supabase-dashboard → Settings → API; ze staan bewust
+niet in deze code, de browser onthoudt ze). Coco haalt de oude columns op, zet alvast een
+vinkje bij wat mee moet en schrijft ze naar Buddy. Wat er al staat blijft met rust, tenzij je
+"ook overschrijven" aanvinkt. Lukt ophalen niet (project gepauzeerd, sleutel ingetrokken), dan
+kun je de rijen uit het Supabase-dashboard kopiëren en als JSON plakken.
+
+Het importscherm is eenmalig bedoeld. Is alles over, dan mag het blok "Eenmalige import uit de
+oude Supabase-opslag" uit `index.html` (plus de bijbehorende `#importView`-sectie en
+`.import-`-stijlen).
+
 ### Publiceren
 
 Een push naar de hoofdbranch publiceert vanzelf (`.github/workflows/deploy-vm.yml`). Met de hand

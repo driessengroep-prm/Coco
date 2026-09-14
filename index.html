@@ -454,6 +454,46 @@
     .topbar .ghost-btn { color: #fff; border: 1.5px solid rgba(255,255,255,0.45); }
     .topbar .ghost-btn:hover { background: rgba(255,255,255,0.12); }
 
+    /* ── Importscherm (eenmalig, zie ?import=supabase) ── */
+    .import-acties { display: flex; gap: 10px; margin-bottom: 18px; }
+    .import-lijst { list-style: none; padding: 0; margin: 0; }
+    .import-lijst li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .import-lijst input[type="checkbox"] { width: auto; margin-top: 3px; flex: none; }
+    /* De label-stijl van het formulier (hoofdletters, spatiëring) hoort hier niet. */
+    .import-lijst label {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .import-lijst .import-titel { display: block; font-weight: 700; }
+    .import-lijst .import-meta {
+      display: block;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    .import-lijst .import-al { color: var(--hout); }
+    .import-optie {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.88rem;
+      margin: 16px 0;
+    }
+    .import-optie input { width: auto; margin: 0; flex: none; }
+
     /* ── Hints & toelichting ── */
     .hint {
       color: var(--muted);
@@ -732,6 +772,47 @@
       </div>
 
       <p id="publishStatus" class="status"></p>
+    </section>
+
+    <!-- Eenmalige import uit de oude Supabase-opslag. Alleen bereikbaar via
+         ?import=supabase; mag weg zodra alles is overgezet. -->
+    <section id="importView" class="card hidden">
+      <h2>📦 Columns overzetten uit Supabase</h2>
+      <p class="hint">De oude opslag van Coco. Haal de columns op, vink aan wat mee moet en zet ze
+        over naar de huidige opslag (Buddy Data). Wat al in Buddy staat wordt met rust gelaten,
+        tenzij je hieronder aangeeft dat het overschreven mag worden.</p>
+
+      <label>
+        Adres van het oude Supabase-project
+        <input id="importSupabaseUrl" type="text" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" />
+      </label>
+      <label>
+        Sleutel (de publieke "anon"- of "publishable"-sleutel)
+        <input id="importSupabaseSleutel" type="password" placeholder="sb_publishable_… of eyJ…" autocomplete="off" />
+      </label>
+      <p class="hint">Te vinden in het Supabase-dashboard onder Settings → API. Ze blijven in deze
+        browser en gaan alleen naar Supabase zelf.</p>
+
+      <div class="import-acties">
+        <button id="importOphalenBtn" class="secondary-btn">☁️ Ophalen uit Supabase</button>
+        <button id="importPlakkenBtn" class="secondary-btn">📋 JSON plakken</button>
+      </div>
+
+      <label id="importPlakVeld" class="hidden">
+        Rijen uit de Supabase-tabel <code>coco_columns</code> (JSON)
+        <textarea id="importJson" rows="5" placeholder='[{"id":"…","item":{…},"updated_at":"…"}]'></textarea>
+        <button id="importJsonLezenBtn" class="secondary-btn">Lezen</button>
+      </label>
+
+      <ul id="importLijst" class="import-lijst"></ul>
+
+      <label class="import-optie hidden" id="importOverschrijfVeld">
+        <input id="importOverschrijf" type="checkbox" />
+        Ook overschrijven wat al in Buddy staat
+      </label>
+
+      <button id="importStartBtn" class="primary-btn hidden">⬇️ Geselecteerde columns overzetten</button>
+      <p id="importStatus" class="status"></p>
     </section>
 
 
@@ -1071,7 +1152,7 @@ Lever ALTIJD geldige JSON terug met exact deze velden (niets eromheen, geen mark
 
     // ---- Views ----
     const $ = id => document.getElementById(id);
-    const VIEWS = ['keyView','formView','loadingView','resultView'];
+    const VIEWS = ['keyView','formView','loadingView','resultView','importView'];
     function show(v) {
       VIEWS.forEach(id => $(id).classList.toggle('hidden', id !== v));
       document.querySelector('main').classList.toggle('result-active', v === 'resultView');
@@ -1101,7 +1182,10 @@ Lever ALTIJD geldige JSON terug met exact deze velden (niets eromheen, geen mark
       // Eerst inloggen met het Driessen-account; zonder komt niemand verder. Op een
       // werklaptop of een telefoon die al ingelogd is, merk je hier niets van.
       await haalEntraToken();
-      if (getKey()) { show('formView'); } else { show('keyView'); }
+      // ?import=supabase opent het eenmalige importscherm i.p.v. het formulier.
+      const importeren = new URLSearchParams(location.search).get('import') === 'supabase';
+      if (importeren) { show('importView'); }
+      else if (getKey()) { show('formView'); } else { show('keyView'); }
       dedupliceerHistory();
       renderSidebar(null);
       renderBibliotheek();
@@ -1671,6 +1755,144 @@ Lever ALTIJD geldige JSON terug met exact deze velden (niets eromheen, geen mark
     function escHtml(s) {
       return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     }
+
+    // ── Eenmalige import uit de oude Supabase-opslag ──
+    // Coco bewaarde de columns eerst in Supabase (tabel `coco_columns`) en sinds
+    // kort in Buddy Data. Dit scherm zet over wat er nog niet staat. Openen met
+    // ?import=supabase achter het adres. Het hele blok mag weg zodra alles over is.
+    // Adres en sleutel van het oude project vul je op het scherm in; ze staan
+    // bewust niet in deze code. De browser onthoudt ze tot de import klaar is.
+    const IMPORT_INSTELLINGEN = 'coco_import_supabase';
+    // Waar de vinkjes standaard bij staan: de columns waar het om ging.
+    const IMPORT_GEZOCHT = [/krimpflatie/i, /\ba-?\s?2\b/i];
+
+    let importRijen = [];   // {id, item, updatedAt, aanwezig, grafsteen}
+    const importMelding = tekst => { $('importStatus').textContent = tekst; };
+
+    // Een rij uit Supabase heeft dezelfde vorm als bij Buddy: id, item (jsonb), updated_at.
+    function importNaarRij(rij) {
+      const item = typeof rij.item === 'string' ? JSON.parse(rij.item) : (rij.item || {});
+      return { id: String(rij.id ?? item.id ?? ''), item, updatedAt: rij.updated_at || item.updatedAt || '' };
+    }
+
+    async function importHaalSupabase() {
+      const adres = $('importSupabaseUrl').value.trim().replace(/\/+$/, '');
+      const sleutel = $('importSupabaseSleutel').value.trim();
+      if (!adres || !sleutel) throw new Error('Vul eerst het adres en de sleutel van het oude Supabase-project in.');
+      localStorage.setItem(IMPORT_INSTELLINGEN, JSON.stringify({ adres, sleutel }));
+      const antwoord = await fetch(
+        `${adres}/rest/v1/coco_columns?select=id,item,updated_at&limit=1000`,
+        { headers: { apikey: sleutel, Authorization: `Bearer ${sleutel}` } },
+      );
+      if (!antwoord.ok) {
+        const detail = await antwoord.text().catch(() => '');
+        throw new Error(`Supabase antwoordde met HTTP ${antwoord.status}. ${detail.slice(0, 200)}`.trim());
+      }
+      return antwoord.json();
+    }
+
+    // Zet de opgehaalde rijen naast wat er al in Buddy staat en toont de lijst.
+    async function importToon(ruweRijen) {
+      const bestaand = {};
+      for (const rij of await buddy({ operation: 'select', columns: ['coco_id', 'updated_at', 'verwijderd'], limit: 1000 })) {
+        bestaand[String(rij.coco_id)] = { updatedAt: rij.updated_at || '', grafsteen: !!rij.verwijderd };
+      }
+      importRijen = ruweRijen
+        .map(importNaarRij)
+        .filter(r => r.id && r.item && !r.item.deleted && r.item.concept)
+        .sort((a, b) => (b.item.aangemaakt || '').localeCompare(a.item.aangemaakt || ''))
+        .map(r => ({ ...r, aanwezig: !!bestaand[r.id] && !bestaand[r.id].grafsteen, grafsteen: !!bestaand[r.id]?.grafsteen }));
+
+      const lijst = $('importLijst');
+      if (importRijen.length === 0) {
+        lijst.innerHTML = '';
+        importMelding('Geen bruikbare columns gevonden in de oude opslag.');
+        return;
+      }
+      lijst.innerHTML = importRijen.map((r, i) => {
+        const titel = r.item.concept?.titel || r.item.onderwerp || '(zonder titel)';
+        const gezocht = IMPORT_GEZOCHT.some(re => re.test(titel) || re.test(r.item.onderwerp || ''));
+        const datum = (r.item.aangemaakt || r.updatedAt || '').slice(0, 10);
+        const status = r.aanwezig ? ' · <span class="import-al">staat al in Buddy</span>'
+          : r.grafsteen ? ' · <span class="import-al">was verwijderd</span>' : '';
+        return `<li>
+          <input type="checkbox" id="imp${i}" data-idx="${i}" ${gezocht && !r.aanwezig ? 'checked' : ''} />
+          <label for="imp${i}">
+            <span class="import-titel">${escHtml(titel)}</span>
+            <span class="import-meta">${escHtml(r.item.onderwerp || '')}${datum ? ' · ' + datum : ''}${status}</span>
+          </label>
+        </li>`;
+      }).join('');
+      $('importOverschrijfVeld').classList.remove('hidden');
+      $('importStartBtn').classList.remove('hidden');
+      const aangevinkt = lijst.querySelectorAll('input:checked').length;
+      importMelding(`${importRijen.length} column(s) gevonden, ${aangevinkt} alvast aangevinkt.`);
+    }
+
+    // Zet de aangevinkte columns in Buddy en meteen ook in deze browser.
+    async function importStart() {
+      const gekozen = [...$('importLijst').querySelectorAll('input:checked')].map(el => importRijen[+el.dataset.idx]);
+      if (gekozen.length === 0) { importMelding('Niets aangevinkt.'); return; }
+      const overschrijven = $('importOverschrijf').checked;
+      $('importStartBtn').disabled = true;
+      let gedaan = 0, overgeslagen = 0;
+      const nieuwe = [];
+      try {
+        for (const r of gekozen) {
+          if (r.aanwezig && !overschrijven) { overgeslagen++; continue; }
+          // Nieuw in Buddy: het oorspronkelijke tijdstip houden, dan klopt de volgorde.
+          // Stond er al iets (of een grafsteen), dan moet het tijdstip van nu, anders
+          // wint dat oudere-maar-nieuwere exemplaar en heeft overzetten geen effect.
+          const updatedAt = (r.aanwezig || r.grafsteen) ? new Date().toISOString()
+            : (r.updatedAt || new Date().toISOString());
+          const item = { ...r.item, id: r.id, updatedAt };
+          await upsertRemote(r.id, { item, updated_at: updatedAt, verwijderd: false });
+          nieuwe.push(item);
+          gedaan++;
+          importMelding(`Bezig… ${gedaan} van ${gekozen.length - overgeslagen} overgezet.`);
+        }
+        // Ook lokaal neerzetten, dan staan ze er zonder de app te herladen.
+        const byId = {};
+        for (const it of loadHistory()) byId[it.id] = it;
+        for (const it of nieuwe) byId[it.id] = it;
+        saveHistory(Object.values(byId)
+          .sort((a, b) => (b.aangemaakt || '').localeCompare(a.aangemaakt || ''))
+          .slice(0, 100));
+        renderSidebar(currentItem?.id || null);
+        renderBibliotheek();
+        importMelding(`Klaar: ${gedaan} overgezet${overgeslagen ? `, ${overgeslagen} overgeslagen (stond er al)` : ''}.`);
+      } catch (fout) {
+        importMelding(`Gestopt na ${gedaan} column(s): ${fout.message}`);
+      } finally {
+        $('importStartBtn').disabled = false;
+      }
+    }
+
+    // Eerder ingevuld? Dan staan adres en sleutel meteen weer goed.
+    try {
+      const bewaard = JSON.parse(localStorage.getItem(IMPORT_INSTELLINGEN) || '{}');
+      if (bewaard.adres) $('importSupabaseUrl').value = bewaard.adres;
+      if (bewaard.sleutel) $('importSupabaseSleutel').value = bewaard.sleutel;
+    } catch { /* niets bewaard */ }
+
+    $('importOphalenBtn').addEventListener('click', async () => {
+      importMelding('Ophalen uit Supabase…');
+      try {
+        await importToon(await importHaalSupabase());
+      } catch (fout) {
+        importMelding(`Ophalen mislukte: ${fout.message} — je kunt de rijen ook uit het Supabase-dashboard kopiëren en hier plakken.`);
+      }
+    });
+    $('importPlakkenBtn').addEventListener('click', () => $('importPlakVeld').classList.toggle('hidden'));
+    $('importJsonLezenBtn').addEventListener('click', async () => {
+      try {
+        const data = JSON.parse($('importJson').value);
+        await importToon(Array.isArray(data) ? data : [data]);
+      } catch (fout) {
+        importMelding(`Lezen mislukte: ${fout.message}`);
+      }
+    });
+    $('importStartBtn').addEventListener('click', importStart);
 
     // ---- Service worker (PWA) ----
     if ('serviceWorker' in navigator) {
