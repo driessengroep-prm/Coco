@@ -1170,6 +1170,9 @@ Lever ALTIJD geldige JSON terug met exact deze velden (niets eromheen, geen mark
     });
 
     // ---- Opstarten ----
+    // Onthoudt dat het importscherm gevraagd is, ook als het inloggen het adres opschoont.
+    const IMPORT_VLAG = 'coco_import_gevraagd';
+
     // Eenmalige migratie: verwijder dubbele items met hetzelfde id (bewaar de eerste = meest recente).
     function dedupliceerHistory() {
       const h = loadHistory();
@@ -1179,12 +1182,18 @@ Lever ALTIJD geldige JSON terug met exact deze velden (niets eromheen, geen mark
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
-      // Eerst inloggen met het Driessen-account; zonder komt niemand verder. Op een
+      // ?import=supabase opent het eenmalige importscherm i.p.v. het formulier.
+      // Eerst onthouden, dán pas inloggen: het loginscherm van Microsoft kan de
+      // pagina terugbrengen zonder het stuk achter het vraagteken, en dan zou je
+      // alsnog op de gewone homepagina belanden.
+      if (new URLSearchParams(location.search).get('import') === 'supabase') {
+        sessionStorage.setItem(IMPORT_VLAG, '1');
+      }
+      // Inloggen met het Driessen-account; zonder komt niemand verder. Op een
       // werklaptop of een telefoon die al ingelogd is, merk je hier niets van.
       await haalEntraToken();
-      // ?import=supabase opent het eenmalige importscherm i.p.v. het formulier.
-      const importeren = new URLSearchParams(location.search).get('import') === 'supabase';
-      if (importeren) { show('importView'); }
+      const importeren = sessionStorage.getItem(IMPORT_VLAG) === '1';
+      if (importeren) { sessionStorage.removeItem(IMPORT_VLAG); show('importView'); }
       else if (getKey()) { show('formView'); } else { show('keyView'); }
       dedupliceerHistory();
       renderSidebar(null);
